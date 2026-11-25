@@ -1,0 +1,104 @@
+name: Build Linux packages (nov2026)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: nov2026-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    container:
+      image: rafradek/ubuntu2004dev:latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Show revision
+        run: |
+          git rev-parse HEAD
+          git log -1 --oneline
+
+      - name: Clone and install AMBuild
+        run: |
+          mkdir -p ../alliedmodders
+          cd ../alliedmodders
+          git clone https://github.com/alliedmodders/ambuild --depth 1
+          cd ambuild
+          pip install .
+
+      - name: Clone SourceMod, Metamod and HL2SDKs
+        run: |
+          cd ../alliedmodders
+          git clone --recursive https://github.com/alliedmodders/sourcemod --depth 1 -b 1.11-dev
+          git clone https://github.com/alliedmodders/hl2sdk --depth 1 -b sdk2013 hl2sdk-sdk2013
+          git clone https://github.com/alliedmodders/hl2sdk --depth 1 -b tf2 hl2sdk-tf2
+          git clone https://github.com/alliedmodders/hl2sdk --depth 1 -b css hl2sdk-css
+          git clone https://github.com/alliedmodders/metamod-source --depth 1 -b 1.11-dev
+
+      - name: Build udis86
+        run: |
+          cd libs/udis86
+          ./autogen.sh
+          ./configure --enable-static=yes
+          make CFLAGS="-m32" LDFLAGS="-m32"
+          mv libudis86/.libs/libudis86.a ../libudis86.a
+          make clean
+          make CFLAGS="-fPIC"
+          mv libudis86/.libs/libudis86.a ../libudis86x64.a
+
+      - name: Build Lua
+        run: |
+          cd libs
+          wget https://www.lua.org/ftp/lua-5.4.4.tar.gz
+          tar -xf lua-*.tar.gz
+          rm lua-*.tar.gz
+          mv lua-* lua
+          cd lua
+          make CC=g++ MYCFLAGS='-m32' MYLDFLAGS='-m32'
+          mv src/liblua.a ../liblua.a
+          make clean
+          make CC=g++ MYCFLAGS='-fPIC'
+          mv src/liblua.a ../libluax64.a
+
+      - name: Configure
+        run: |
+          echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+          export PATH=$HOME/.local/bin:$PATH
+          ./autoconfig.sh
+
+      - name: Build and package
+        run: |
+          export PATH=$HOME/.local/bin:$PATH
+          ./multibuild.sh
+          ls -la build/release/*.zip
+
+      - name: Upload full package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-linux
+          path: build/release/package-linux.zip
+          retention-days: 1
+
+      - name: Upload no-mvm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-linux-no-mvm
+          path: build/release/package-linux-no-mvm.zip
+          retention-days: 1
+
+      - name: Upload optimize-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-linux-optimize-only
+          path: build/release/package-linux-optimize-only.zip
+          retention-days: 1
