@@ -20,11 +20,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 1
 
-      - name: Show revision
+      - name: Init required submodules
         run: |
+          git config --global --add safe.directory '*'
+          git submodule update --init --depth 1 libs/udis86 hl2sdk-manifests
           git rev-parse HEAD
           git log -1 --oneline
 
